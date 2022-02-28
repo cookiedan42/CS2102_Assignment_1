@@ -242,6 +242,30 @@ Find all teams (sid1, sid2, sid3, sid4) that meet the above requirements where s
 */
 
 create or replace view v10 (sid1, sid2, sid3, sid4) as 
-select 'sid1', 'sid2', 'sid3', 'sid4' /* replace this with your answer */
+-- select 'sid1', 'sid2', 'sid3', 'sid4'; /* replace this with your answer */
+with eligible as (
+    select Tutors.sid
+    from Tutors left join Students on Tutors.sid = Students.sid
+    where Students.year >=2019
+    -- and semester = 1 and Tutors.year=2022 
+    group by Tutors.sid having sum(hours) >= 10
+), mods_taken as (
+    select sid, 
+    (select count(*)>0 from Transcripts as t2 where cid = 'cs1' and t1.sid = t2.sid) as cs1,
+    (select count(*)>0 from Transcripts as t2 where cid = 'cs2' and t1.sid = t2.sid) as cs2,
+    (select count(*)>0 from Transcripts as t2 where cid = 'cs3' and t1.sid = t2.sid) as cs3,
+    (select count(*)>0 from Transcripts as t2 where cid = 'cs4' and t1.sid = t2.sid) as cs4
+ from Transcripts as t1 group by sid
+), mods2 as (
+    select eligible.sid,
+    case when (cs1 and cs2) then 1 else 0 end as cond1,
+    case when (cs3 or cs4) then 1 else 0 end as cond2
+from eligible left join mods_taken on eligible.sid = mods_taken.sid
+)
+select m1.sid, m2.sid, m3.sid, m4.sid
+from mods2 as m1 cross join mods2 as m2 cross join mods2 as m3 cross join mods2 as m4
+where m1.sid < m2.sid and m2.sid < m3.sid and m3.sid < m4.sid
+and m1.cond1 + m2.cond1 + m3.cond1 + m4.cond1 >=2
+and m1.cond2 + m2.cond2 + m3.cond2 + m4.cond2 >=2
 ;
 
