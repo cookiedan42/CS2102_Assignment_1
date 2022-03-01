@@ -268,6 +268,8 @@ The team of tutors must meet all the following requirements:
 
 Find all teams (sid1, sid2, sid3, sid4) that meet the above requirements where sid1, sid2, sid3, and sid4 are student identifiers such that sid1 < sid2 < sid3 < sid4.
 
+does splitting up the cross join help performance? probable
+
 */
 
 create or replace view v10 (sid1, sid2, sid3, sid4) as 
@@ -292,21 +294,26 @@ mods_taken as (
     from Transcripts
     group by sid
 ), 
-mods2 as (
+mods_1 as (
     select sid,
         case when (cs1 and cs2) then 1 else 0 end as cond1,
         case when (cs3 or cs4) then 1 else 0 end as cond2
     from eligible 
         left join mods_taken 
             using(sid)
+),
+mods_2 as (
+    select distinct 
+        m1.sid as sid1, m2.sid as sid2,
+        m1.cond1 + m2.cond1 as cond1,
+        m1.cond2 + m2.cond2 as cond2
+    from mods_1 as m1 cross join mods_1 as m2 
+    where m1.sid < m2.sid
 )
-select distinct m1.sid, m2.sid, m3.sid, m4.sid
-from mods2 as m1
-    cross join mods2 as m2 
-    cross join mods2 as m3 
-    cross join mods2 as m4
-where m1.sid < m2.sid and m2.sid < m3.sid and m3.sid < m4.sid
-and m1.cond1 + m2.cond1 + m3.cond1 + m4.cond1 >=2
-and m1.cond2 + m2.cond2 + m3.cond2 + m4.cond2 >=2
-;
+select distinct m12.sid1, m12.sid2, m34.sid1, m34.sid2
+from mods_2 as m12 cross join mods_2 as m34
 
+where m12.sid2 < m34.sid1
+and m12.cond1 + m34.cond1 >=2
+and m12.cond2 + m34.cond2 >=2
+;
