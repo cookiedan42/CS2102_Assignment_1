@@ -25,7 +25,8 @@ create or replace  view v1 (sid,cid) as
     in the same session (identified by (year, semester)).
 */
 create or replace view v2 (sid) as 
-    SELECT DISTINCT sid FROM Tutors 
+    SELECT DISTINCT sid 
+    FROM Tutors 
     GROUP BY year, semester, sid
     HAVING count(*) >= 2
 ;
@@ -49,9 +50,9 @@ create or replace view v2 (sid) as
 create or replace view v3 (cid, year, semester) as 
     WITH 
     Enrollment AS (
-        SELECT cid,year,semester,count(sid) AS sid_count 
+        SELECT cid, year, semester,count(sid) AS sid_count 
         FROM Transcripts 
-        GROUP BY cid,year,semester
+        GROUP BY cid, year, semester
     ),
     MAX_Enrollment AS (
         SELECT cid, max(sid_count) AS max_sid
@@ -61,7 +62,7 @@ create or replace view v3 (cid, year, semester) as
     SELECT DISTINCT Enrollment.cid, year, semester 
     FROM Enrollment 
         LEFT JOIN MAX_Enrollment 
-            USING (cid)
+            ON Enrollment.cid = MAX_Enrollment.cid
     WHERE Enrollment.sid_count = MAX_Enrollment.max_sid
 ;
 
@@ -82,22 +83,27 @@ create or replace view v4 (cid, year, semester) as
         FROM Teaches 
         GROUP BY cid, year, semester
     )
-    SELECT DISTINCT cid, year, semester 
+    SELECT DISTINCT Offerings.cid, Offerings.year, Offerings.semester 
     FROM Offerings 
-        LEFT JOIN Prof_count
-            USING(cid,year,semester)
         LEFT JOIN Courses 
-            USING (cid)
-    WHERE semester = 2
-        OR did = 'cs'
-        OR counter = 1
+            ON Offerings.cid = Courses.cid
+        LEFT JOIN Prof_count
+            ON  Offerings.cid = Prof_count.cid
+            AND Offerings.year = Prof_count.year
+            AND Offerings.semester = Prof_count.semester
+    WHERE Offerings.semester = 2
+        OR Courses.did = 'cs'
+        OR Prof_count.counter = 1
 ;
 
+
 /*
-Find all the distinct courses (identified by cid) that satisfy both of the following conditions:
+Find all the distinct courses (identified by cid) 
+that satisfy both of the following conditions:
     cid is available from the 'cs' department, and
     the student 'alice' has not enrolled in cid.
 */
+
 
 create or replace view v5 (cid) as 
     SELECT DISTINCT cid 
@@ -138,6 +144,7 @@ create or replace view v6 (cid, year, semester, cost) as
     GROUP BY cid, year, semester
 ;
 
+
 /*
 For each department D, find the following information for D:
     the faculty of D,
@@ -172,35 +179,40 @@ create or replace view v7 (did, faculty, num_admitted, num_offering, total_enrol
         SELECT did, count(*) as num_enrollment 
         FROM Transcripts 
             LEFT JOIN Courses
-                USING(cid) 
+                ON Transcripts.cid = Courses.cid 
         WHERE year = 2021 
         GROUP BY did
     )
-    SELECT did, faculty,
-        COALESCE(num_admitted, 0)   as num_admitted, 
-        COALESCE(num_offering, 0)   as num_offering,
+    SELECT DISTINCT Departments.did, faculty,
+        COALESCE(num_admitted  , 0) as num_admitted, 
+        COALESCE(num_offering  , 0) as num_offering,
         COALESCE(num_enrollment, 0) as num_enrollment
     FROM Departments 
-        LEFT JOIN Admission_num 
-            USING(did)
-        LEFT JOIN Offering_num
-            USING(did)
+        LEFT JOIN Admission_num
+            ON Departments.did = Admission_num.did
+        LEFT JOIN  Offering_num
+            ON Departments.did = Offering_num.did
         LEFT JOIN Enrollment_num
-            USING(did)
+            ON Departments.did = Enrollment_num.did
 ;
 
 
 /*
 Find all (sid, year, semester) where 
-the student identified by sid has enrolled only in courses offered by the 'cs' department 
+the student identified by sid has enrolled 
+only in courses offered by the 'cs' department 
     in the session specified by (year, semester). 
-That is, sid did not enroll in any course that is offered by a department that is not 'cs' 
-    in the session (year, semester).
-Exclude (sid, year, semester) where sid did not enroll in any courses at all 
+
+That is, sid did not enroll in any course that 
+is offered by a department that is not 'cs' 
     in the session (year, semester).
 
-// Transcripts group by session,sid check if any non-cs
-select cid,sid,year,semester from Courses natural join Offerings natural join Transcripts group by sid,year,semester;
+Exclude (sid, year, semester) where sid did not enroll 
+in any courses at all 
+    in the session (year, semester).
+
+// if enroll in nothing, won't appear in Transcripts
+All enroll - enroll in non-cs
 */
 
 create or replace view v8 (sid, year, semester) as
@@ -239,22 +251,39 @@ create or replace view v9 (sid, year, semester) as
         GROUP BY cid, year, semester
     ), 
     Taken_mods_count as (
-        SELECT sid, year, semester, count(*) as mod_count 
+        SELECT sid, year, semester, count(*) as mod_taken_counter
         FROM Transcripts 
         GROUP BY sid, year, semester
     ), 
     Topped_mods_count as (
-        SELECT sid, year, semester, count(*) as mod_count 
+        SELECT 
+            Transcripts.sid, 
+            Transcripts.year, 
+            Transcripts.semester, 
+            count(*) as mod_topped_counter
         FROM Transcripts 
             INNER JOIN Top_marks
-                USING(cid, year, semester, marks)
-        GROUP BY sid, year, semester
+                ON Transcripts.cid = Top_marks.cid
+                AND Transcripts.year = Top_marks.year
+                AND Transcripts.semester = Top_marks.semester
+                AND Transcripts.marks = Top_marks.marks
+        GROUP BY
+            Transcripts.sid, 
+            Transcripts.year, 
+            Transcripts.semester
     )
-    SELECT sid, year, semester 
+    SELECT DISTINCT
+        Taken_mods_count.sid, 
+        Taken_mods_count.year, 
+        Taken_mods_count.semester 
     FROM Taken_mods_count 
         INNER JOIN Topped_mods_count
-            USING (sid, year, semester, mod_count)
+            ON Taken_mods_count.sid = Topped_mods_count.sid
+            AND Taken_mods_count.year = Topped_mods_count.year
+            AND Taken_mods_count.semester = Topped_mods_count.semester
+            AND Taken_mods_count.mod_taken_counter = Topped_mods_count.mod_topped_counter
 ;
+
 
 /*
 A professor is looking for a team of four students to help tutor a course in session (2022,2). 
@@ -274,39 +303,50 @@ does splitting up the cross join help performance? probable
 
 create or replace view v10 (sid1, sid2, sid3, sid4) as 
 
-with eligible as (
-    select sid
+with 
+Eligible_Hours as (
+    select Tutors.sid
     from Tutors 
         left join Students 
-            using(sid)
-    where Students.year >=2019
+            on Tutors.sid = Students.sid
+    where Students.year >= 2019
         and Tutors.semester = 1 
         and Tutors.year = 2022 
-    group by sid 
+    group by Tutors.sid 
     having sum(hours) >= 10
 ), 
-mods_taken as (
-    select sid, 
-        bool_or(cid='cs1') as cs1, 
-        bool_or(cid='cs2') as cs2, 
-        bool_or(cid='cs3') as cs3, 
-        bool_or(cid='cs4') as cs4
+Cond_12 as (
+    select sid, 1 as cond12
     from Transcripts
+    where cid = 'cs1'
+        or cid = 'cs2'
     group by sid
-), 
+    having count(distinct cid) >= 2
+),
+Cond_34 as (
+    select sid, 1 as cond34
+    from Transcripts
+    where cid = 'cs3'
+        or cid = 'cs4'
+    group by sid
+    having count(distinct cid) >= 1
+),
+
 mods_1 as (
-    select sid,
-        case when (cs1 and cs2) then 1 else 0 end as cond1,
-        case when (cs3 or cs4) then 1 else 0 end as cond2
-    from eligible 
-        left join mods_taken 
-            using(sid)
+    select Eligible_Hours.sid, 
+        COALESCE(cond12,0) as cond12, 
+        COALESCE(cond34,0) as cond34
+    from Eligible_Hours
+        left join Cond_12
+            ON Eligible_Hours.sid = Cond_12.sid
+        left join Cond_34
+            ON Eligible_Hours.sid = Cond_34.sid
 ),
 mods_2 as (
     select distinct 
         m1.sid as sid1, m2.sid as sid2,
-        m1.cond1 + m2.cond1 as cond1,
-        m1.cond2 + m2.cond2 as cond2
+        m1.cond12 + m2.cond12 as cond12,
+        m1.cond34 + m2.cond34 as cond34
     from mods_1 as m1 cross join mods_1 as m2 
     where m1.sid < m2.sid
 )
@@ -314,6 +354,6 @@ select distinct m12.sid1, m12.sid2, m34.sid1, m34.sid2
 from mods_2 as m12 cross join mods_2 as m34
 
 where m12.sid2 < m34.sid1
-and m12.cond1 + m34.cond1 >=2
-and m12.cond2 + m34.cond2 >=2
+and m12.cond12 + m34.cond12 >=2
+and m12.cond34 + m34.cond34 >=2
 ;
