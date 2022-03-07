@@ -28,7 +28,7 @@ create or replace view v2 (sid) as
     SELECT DISTINCT sid 
     FROM Tutors 
     GROUP BY year, semester, sid
-    HAVING count(*) >= 2
+    HAVING count( DISTINCT cid ) >= 2
 ;
 
 
@@ -50,7 +50,7 @@ create or replace view v2 (sid) as
 create or replace view v3 (cid, year, semester) as 
     WITH 
     Enrollment AS (
-        SELECT cid, year, semester,count(sid) AS sid_count 
+        SELECT cid, year, semester, count(sid) AS sid_count 
         FROM Transcripts 
         GROUP BY cid, year, semester
     ),
@@ -75,25 +75,23 @@ at least one of the following conditions:
     O was taught by exactly one professor, or   --> teaches group by session count = 1
 
     Ensures all offerings are presented
+    Union drops duplicates
 */
 create or replace view v4 (cid, year, semester) as 
-    with 
-    Prof_count as (
-        SELECT cid, year, semester, count(*) as counter
-        FROM Teaches 
-        GROUP BY cid, year, semester
-    )
+
+    SELECT DISTINCT cid, year, semester
+    FROM Teaches 
+    GROUP BY cid, year, semester
+    HAVING COUNT(*) = 1
+
+    UNION
+
     SELECT DISTINCT Offerings.cid, Offerings.year, Offerings.semester 
     FROM Offerings 
         LEFT JOIN Courses 
             ON Offerings.cid = Courses.cid
-        LEFT JOIN Prof_count
-            ON  Offerings.cid = Prof_count.cid
-            AND Offerings.year = Prof_count.year
-            AND Offerings.semester = Prof_count.semester
     WHERE Offerings.semester = 2
         OR Courses.did = 'cs'
-        OR Prof_count.counter = 1
 ;
 
 
@@ -171,7 +169,7 @@ create or replace view v7 (did, faculty, num_admitted, num_offering, total_enrol
         SELECT did, count(*) as num_offering 
         FROM Offerings 
             LEFT JOIN Courses
-                USING(cid) 
+                ON Offerings.cid = Courses.cid 
         WHERE year = 2021 
         GROUP BY did
     ),
@@ -224,8 +222,8 @@ create or replace view v8 (sid, year, semester) as
 
     SELECT DISTINCT sid, year, semester 
     FROM Transcripts 
-        LEFT JOIN courses
-            USING(cid) 
+        LEFT JOIN Courses
+            ON Transcripts.cid = Courses.cid 
     WHERE did <> 'cs'
 ;
 
@@ -277,11 +275,11 @@ create or replace view v9 (sid, year, semester) as
         Taken_mods_count.year, 
         Taken_mods_count.semester 
     FROM Taken_mods_count 
-        INNER JOIN Topped_mods_count
+        LEFT JOIN Topped_mods_count
             ON Taken_mods_count.sid = Topped_mods_count.sid
             AND Taken_mods_count.year = Topped_mods_count.year
             AND Taken_mods_count.semester = Topped_mods_count.semester
-            AND Taken_mods_count.mod_taken_counter = Topped_mods_count.mod_topped_counter
+    WHERE Taken_mods_count.mod_taken_counter = Topped_mods_count.mod_topped_counter
 ;
 
 
@@ -350,7 +348,11 @@ mods_2 as (
     from mods_1 as m1 cross join mods_1 as m2 
     where m1.sid < m2.sid
 )
-select distinct m12.sid1, m12.sid2, m34.sid1, m34.sid2
+select distinct 
+    m12.sid1 as sid1,
+    m12.sid2 as sid2, 
+    m34.sid1 as sid3, 
+    m34.sid2 as sid4
 from mods_2 as m12 cross join mods_2 as m34
 
 where m12.sid2 < m34.sid1
